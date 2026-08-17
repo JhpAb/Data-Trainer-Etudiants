@@ -1,0 +1,9 @@
+produit_key,categorie_produit,gamme,taux_marge_pct,departement
+1,Alimentaire,Économique,12,Grand public
+2,Beauté,Standard,45,Grand public
+3,Livres,Économique,25,Grand public
+4,Maison,Standard,30,Grand public
+5,Mode,Standard,40,Textile
+6,Sport,Standard,35,Grand public
+7,Téléphonie,Premium,18,Digital
+8,Électronique,Premium,22,Digital

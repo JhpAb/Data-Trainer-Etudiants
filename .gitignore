@@ -1,0 +1,5 @@
+# Fichiers générés localement par l'étudiant
+.ipynb_checkpoints/
+__pycache__/
+*.pyc
+_t.ipynb
