@@ -1,0 +1,114 @@
+# Workflow d'évaluation automatique du TD Marketing Analytics (BIU / MSSM)
+# S'exécute à chaque push sur le notebook TD_Exercices.ipynb
+# L'étudiant voit sa note directement sur son repo (badge + commentaire de commit)
+#
+# Score global = Qualité (60%) + Intégrité (40%)
+# - Qualité : tests unitaires sur les résultats (test_td.py)
+# - Intégrité : historique git + cellules réflexion + originalité (check_integrity.py)
+#
+# Le corrigé est cloné depuis le dépôt privé Data-Trainer pour la comparaison
+# anti-plagiat (jamais visible par l'étudiant). Si le secret PROF_REPO_TOKEN
+# n'est pas configuré, la comparaison est désactivée (30/30 par défaut).
+
+name: 📊 Évaluation TD Marketing Analytics (BIU/MSSM)
+
+on:
+  push:
+    paths:
+      - 'BIU/MSSM/td_exercices/TD_Exercices.ipynb'
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write      # pour committer le badge
+      issues: write       # pour commenter le commit
+
+    steps:
+      - name: 📥 Checkout du code (historique complet)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # historique git complet pour l'analyse d'intégrité
+
+      - name: 🔑 Récupération du corrigé (dépôt privé Data-Trainer)
+        env:
+          GH_TOKEN: ${{ secrets.PROF_REPO_TOKEN }}
+        run: |
+          # Clone le corrigé depuis le dépôt privé Data-Trainer.
+          # Le token doit avoir read-access sur JhpAb/Data-Trainer.
+          # Si le token n'est pas configuré, la comparaison anti-plagiat
+          # est désactivée (check_integrity.py donne 30/30 par défaut).
+          if [ -z "$GH_TOKEN" ]; then
+            echo "⚠️ PROF_REPO_TOKEN non configuré — anti-plagiat désactivé (30/30 par défaut)"
+          else
+            echo "📥 Clonage du corrigé depuis Data-Trainer..."
+            git clone --depth 1 --filter=blob:none --sparse \
+              "https://x-access-token:${GH_TOKEN}@github.com/JhpAb/Data-Trainer.git" \
+              _prof 2>&1 || { echo "Échec du clonage — anti-plagiat désactivé"; exit 0; }
+            cd _prof
+            git sparse-checkout set BIU/MSSM/prof/td_exercices 2>/dev/null || true
+            cd ..
+            # Placer le corrigé au chemin attendu par check_integrity.py
+            if [ -f _prof/BIU/MSSM/prof/td_exercices/TD_Exercices_Corriges.ipynb ]; then
+              mkdir -p _corriges
+              cp _prof/BIU/MSSM/prof/td_exercices/TD_Exercices_Corriges.ipynb _corriges/
+              echo "✅ Corrigé récupéré pour comparaison anti-plagiat"
+            else
+              echo "⚠️ Corrigé introuvable dans le dépôt privé — anti-plagiat désactivé"
+            fi
+            rm -rf _prof/.git
+          fi
+
+      - name: 🐍 Configuration Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: 📦 Installation des dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas numpy scikit-learn matplotlib seaborn statsmodels jupytext nbformat
+
+      - name: 🧪 Étape 1 — Tests de qualité (résultats corrects)
+        run: |
+          python scripts/test_td.py \
+            --notebook BIU/MSSM/td_exercices/TD_Exercices.ipynb \
+            --output tests_results.json
+        continue-on-error: true
+
+      - name: 🔒 Étape 2 — Vérification d'intégrité
+        run: |
+          CORRIGE_PATH=""
+          if [ -f _corriges/TD_Exercices_Corriges.ipynb ]; then
+            CORRIGE_PATH="--corriges _corriges/TD_Exercices_Corriges.ipynb"
+          fi
+          python scripts/check_integrity.py \
+            --notebook BIU/MSSM/td_exercices/TD_Exercices.ipynb \
+            $CORRIGE_PATH \
+            --output integrity_results.json
+        continue-on-error: true
+
+      - name: 📊 Étape 3 — Score global (qualité 60% + intégrité 40%)
+        run: |
+          python scripts/score_td.py \
+            --input tests_results.json \
+            --integrity integrity_results.json \
+            --output BIU/MSSM/score_summary.md \
+            --badge BIU/MSSM/score_badge.svg
+          echo "## Résumé de l'évaluation" >> $GITHUB_STEP_SUMMARY
+          cat BIU/MSSM/score_summary.md >> $GITHUB_STEP_SUMMARY
+
+      - name: 💾 Commit du badge + résumé
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "📊 Évaluation automatique (qualité + intégrité)"
+          file_pattern: "BIU/MSSM/score_badge.svg BIU/MSSM/score_summary.md"
+          commit_options: '--no-verify'
+
+      - name: 💬 Commentaire de commit avec le score détaillé
+        uses: peter-evans/commit-comment@v3
+        with:
+          body-path: BIU/MSSM/score_summary.md
